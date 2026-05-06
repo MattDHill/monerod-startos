@@ -1,10 +1,35 @@
 import { IMPOSSIBLE, VersionInfo, YAML } from '@start9labs/start-sdk'
 import { existsSync } from 'fs'
-import { readdir, readFile, rename, rm } from 'fs/promises'
+import { chown, readdir, readFile, rename, rm } from 'fs/promises'
+import { join } from 'path'
 import { walletRpcConfFile } from '../fileModels/monero-wallet-rpc.conf'
 import { moneroConfFile } from '../fileModels/monero.conf'
 import { storeJson } from '../fileModels/store.json'
 import { zmqPort, zmqPubsubPort } from '../utils'
+
+// Chown the path BEFORE recursing so we gain traversal access to dirs
+// whose mode would otherwise lock us out. Silent on failure — best-effort.
+async function chownRecursive(path: string, uid: number, gid: number) {
+  try {
+    await chown(path, uid, gid)
+  } catch {
+    return
+  }
+  let entries
+  try {
+    entries = await readdir(path, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    const full = join(path, entry.name)
+    if (entry.isDirectory()) {
+      await chownRecursive(full, uid, gid)
+    } else {
+      await chown(full, uid, gid).catch(() => {})
+    }
+  }
+}
 
 interface OldCredentials {
   enabled: 'enabled' | 'disabled'
@@ -51,17 +76,33 @@ interface OldConfigYaml {
   }
 }
 
-export const v_0_18_4_6_1 = VersionInfo.of({
-  version: '0.18.4.6:1',
+export const v_0_18_4_6_2 = VersionInfo.of({
+  version: '0.18.4.6:2',
   releaseNotes: {
-    en_US: 'Internal updates (start-sdk 1.2.0)',
-    es_ES: 'Actualizaciones internas (start-sdk 1.2.0)',
-    de_DE: 'Interne Aktualisierungen (start-sdk 1.2.0)',
-    pl_PL: 'Aktualizacje wewnętrzne (start-sdk 1.2.0)',
-    fr_FR: 'Mises à jour internes (start-sdk 1.2.0)',
+    en_US:
+      'Fix 0.3.x → 0.4 migration: normalize legacy `main` volume ownership so the migration can read and write inside it.',
+    es_ES:
+      'Corrección de la migración 0.3.x → 0.4: normaliza la propiedad del volumen `main` heredado para que la migración pueda leer y escribir en él.',
+    de_DE:
+      'Fix für die Migration 0.3.x → 0.4: Eigentum des Legacy-`main`-Volumes wird normalisiert, damit die Migration darin lesen und schreiben kann.',
+    pl_PL:
+      'Poprawka migracji 0.3.x → 0.4: normalizuje uprawnienia starszego woluminu `main`, aby migracja mogła w nim odczytywać i zapisywać.',
+    fr_FR:
+      'Correctif de migration 0.3.x → 0.4 : normalise la propriété du volume `main` hérité afin que la migration puisse y lire et écrire.',
   },
   migrations: {
     up: async ({ effects }) => {
+      // 0.3.x monerod ran the container as UID 30234 / GID 302340 (the
+      // legacy Dockerfile rewrote /etc/passwd) with `main` mounted in.
+      // GID 302340 is outside the 0.4 idmap window (host 100000..165535),
+      // so the migration sandbox sees `main` and `main/start9` as
+      // overflow-owned and non-traversable. Normalize to sandbox-uid 0 —
+      // which equals host 100000, also = container-root in the new
+      // monerod/wallet containers (same idmap) — before any other host
+      // fs op. main.ts's chown oneshots re-chown to monero:monero on
+      // first start.
+      await chownRecursive('/media/startos/volumes/main', 0, 0)
+
       // Read old config.yaml if it exists
       const configYaml: OldConfigYaml | undefined = await readFile(
         '/media/startos/volumes/main/start9/config.yaml',
@@ -169,7 +210,7 @@ export const v_0_18_4_6_1 = VersionInfo.of({
           }
         }
 
-        await moneroConfFile.write(effects, confSettings as any)
+        await moneroConfFile.merge(effects, confSettings)
 
         // Build wallet-rpc conf — zod .catch() fills missing defaults
         const walletSettings: Record<string, any> = {}
@@ -182,11 +223,13 @@ export const v_0_18_4_6_1 = VersionInfo.of({
           walletSettings['daemon-login'] =
             `${rpcCreds.username}:${rpcCreds.password}`
         }
-        await walletRpcConfFile.write(effects, walletSettings as any)
+        await walletRpcConfFile.merge(effects, walletSettings)
       } else {
-        // No old config — write defaults (zod .catch() fills all defaults)
-        await moneroConfFile.write(effects, {} as any)
-        await walletRpcConfFile.write(effects, {} as any)
+        // No 0.3.x config to migrate. `merge` is a no-op when the file
+        // already exists (preserves any customizations the user made on
+        // a clean :1 install) and seeds defaults if it doesn't.
+        await moneroConfFile.merge(effects, {})
+        await walletRpcConfFile.merge(effects, {})
       }
 
       // Remove old files
