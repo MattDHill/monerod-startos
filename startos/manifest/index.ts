@@ -14,7 +14,6 @@ export const manifest = setupManifest({
   packageRepo: 'https://github.com/Start9-Community/monerod-startos',
   upstreamRepo: 'https://github.com/monero-project/monero',
   marketingUrl: 'https://getmonero.org',
-  docsUrls: ['https://docs.getmonero.org'],
   donationUrl: null,
   description: { short, long },
   volumes: ['main', 'monerod', 'wallet'],
