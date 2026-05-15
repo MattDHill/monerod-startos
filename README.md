@@ -118,7 +118,7 @@ On fresh install, StartOS writes the config files before the daemons start:
 
 - **`monero.conf`** — enforced keys only. Every user-facing setting is absent, meaning monerod applies its own default.
 - **`monero-wallet-rpc.conf`** — enforced keys plus `disable-rpc-login=1`.
-- **`ban_list.txt`** — empty file (created so monerod doesn't fail the startup file-existence check on `--ban-list`).
+- **`ban_list.txt`** — seeded from the upstream simple-monerod image's bundled list at `/home/monero/ban_list.txt` on first start. The seed runs again whenever the volume's file is empty (so a wiped volume re-seeds), but is skipped once the file is non-empty so user edits via the Edit Ban List action are preserved.
 - **`store.json`** — default intents (`outboundProxy=none`, everything else off / null).
 
 No setup wizard is required. The node begins syncing immediately after install, on clearnet.
@@ -163,17 +163,19 @@ Peer, rate-limit, and P2P privacy settings. Form field names mirror the monerod 
 
 Tor-related intents. Stored in `store.json`; `main.ts` resolves the Tor container IP and the Peer interface's own onion URL at runtime and builds the matching monerod CLI args. The corresponding raw INI keys (`tx-proxy`, `proxy`, `anonymous-inbound`, `pad-transactions`) are enforced undefined in `monero.conf`, so hand-edits to those keys get stripped.
 
-| Input                               | Maps to CLI arg                              | Default |
-| ----------------------------------- | -------------------------------------------- | ------- |
-| Route all outbound traffic via      | `--proxy <torIp>:9050`                       | none    |
-| Make outbound connections over Tor  | `--tx-proxy tor,<torIp>:9050,N`              | off     |
-| Accept inbound connections over Tor | `--anonymous-inbound <onion>:<p2p>,...,N`    | off     |
-| Max Tor outbound conns              | third field of `--tx-proxy`                  | 16      |
-| Max Tor inbound conns               | third field of `--anonymous-inbound`         | 16      |
-| Dandelion++ noise                   | inverts `disable_noise` flag on `--tx-proxy` | neutral |
-| Pad transactions                    | `--pad-transactions`                         | off     |
+| Input                                     | Maps to CLI arg                              | Default |
+| ----------------------------------------- | -------------------------------------------- | ------- |
+| Route all outbound traffic via            | `--proxy <torIp>:9050`                       | none    |
+| Send local transactions through Tor proxy | `--tx-proxy tor,<torIp>:9050,N`              | off     |
+| Accept inbound connections over Tor       | `--anonymous-inbound <onion>:<p2p>,...,N`    | off     |
+| Max Tor outbound conns                    | third field of `--tx-proxy`                  | 16      |
+| Max Tor inbound conns                     | third field of `--anonymous-inbound`         | 16      |
+| Dandelion++ noise                         | inverts `disable_noise` flag on `--tx-proxy` | neutral |
+| Pad transactions                          | `--pad-transactions`                         | off     |
 
-When **Make outbound connections over Tor** is on, monerod creates the Tor zone and bootstraps it against six hardcoded onion seeds compiled into the binary. Locally-originated transactions are then broadcast *only* over Tor (never duplicated to clearnet). Block sync, peer gossip, and forwarding of transactions received from clearnet peers continue over clearnet — set **Route all outbound traffic via** to `tor` if you also want clearnet-zone outbound to go through the Tor SOCKS proxy.
+When **Send local transactions through Tor proxy** is on, monerod creates the Tor zone and bootstraps it against six hardcoded onion seeds compiled into the binary. Locally-originated transactions are then broadcast *only* over Tor (never duplicated to clearnet). Block sync, peer gossip, and forwarding of transactions received from clearnet peers continue over clearnet — set **Route all outbound traffic via** to `tor` if you also want clearnet-zone outbound to go through the Tor SOCKS proxy.
+
+**Accept inbound connections over Tor** requires a `.onion` address on the Peer interface (Interfaces → Peer → Add Tor address). When inbound is on but no peer onion is provisioned, monerod is started without `--anonymous-inbound` and the Tor health check reports the misconfiguration. Inbound also implicitly enables `--tx-proxy tor,...`, since monerod requires a tx-proxy for any zone with an anonymous-inbound configured.
 
 ### Edit Ban List
 
@@ -233,7 +235,7 @@ Only regeneratable state is excluded from the `monerod` volume: the blockchain d
 | **Monero Daemon**            | Port listening on 18089               | 30 seconds   | Restricted RPC reachability                                                                |
 | **Wallet RPC**               | Port listening on 28088               | Default      | monero-wallet-rpc reachability                                                             |
 | **Blockchain Sync Progress** | JSON-RPC `get_info` on restricted RPC | Default      | Starting → loading (`Syncing blocks...XX.XX%`) → success (`Monero is fully synced`)         |
-| **Tor**                      | Reads store + Tor package status      | n/a          | Disabled when no Tor intent is set, Tor isn't installed, or Tor isn't running; otherwise reports inbound/outbound state |
+| **Tor**                      | Reads store + Tor package status      | n/a          | Disabled when no Tor intent is set, Tor isn't installed, or Tor isn't running. Failure when inbound is enabled but the Peer interface has no `.onion` address. Otherwise success — reports inbound/outbound state. |
 | **Clearnet**                 | Reads `outboundProxy` intent          | n/a          | Disabled when **Route all outbound traffic via** is set to Tor; otherwise success           |
 
 ## Dependencies
@@ -242,7 +244,7 @@ Only regeneratable state is excluded from the `monerod` volume: the blockchain d
 | ---------- | -------- | ------------------ | --------------------------------------- |
 | Tor        | Optional | >= 0.4.9.5         | SOCKS proxy for Tor outbound / inbound  |
 
-Tor becomes a **runtime-required** dependency when any Tor intent is enabled in the Anonymity Networks action (outbound proxy, make outbound connections over Tor, or accept inbound over Tor). When all intents are off, Tor is not required. No volumes are mounted from Tor; monerod connects to the Tor SOCKS proxy at `<tor-container-ip>:9050`, resolved at daemon launch.
+Tor becomes a **runtime-required** dependency when any Tor intent is enabled in the Anonymity Networks action (outbound proxy, send local transactions through Tor proxy, or accept inbound over Tor). When all intents are off, Tor is not required. No volumes are mounted from Tor; monerod connects to the Tor SOCKS proxy at `<tor-container-ip>:9050`, resolved at daemon launch.
 
 ## Limitations and Differences
 

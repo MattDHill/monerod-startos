@@ -23,6 +23,7 @@ const dict = {
   Clearnet: 18,
   'Excluded by outbound proxy': 19,
   'Outbound only. Publish an IP address to enable inbound.': 128,
+  'Inbound enabled but no .onion address on the Peer interface — add a Tor address to the Peer interface, then restart.': 129,
 
   // interfaces.ts
   'Peer Interface': 20,
@@ -79,10 +80,10 @@ const dict = {
   'Route all outbound traffic via': 55,
   'Force the public (clearnet) zone to dial out through a SOCKS proxy. Maps to monerod --proxy. Only one proxy is allowed; forcing all traffic through Tor exits can be slow and has privacy trade-offs.': 56,
   Disabled: 57,
-  'Make outbound connections over Tor': 58,
-  'Enable Tor for outbound peer-to-peer connections. Monerod bootstraps against six hardcoded onion seeds, builds a Tor-zone peerlist via gossip, and broadcasts locally-originated transactions through those peers. Clearnet block sync, gossip, and forwarded transactions continue over clearnet. For maximum privacy, also enable Pad transactions. Maps to monerod --tx-proxy tor,...': 59,
+  'Send local transactions through Tor proxy': 58,
+  'Use a Tor SOCKS proxy when broadcasting locally-originated transactions, so the originating IP is concealed from the rest of the network. Monerod creates a Tor zone, bootstraps it against six hardcoded onion seeds, builds a Tor-zone peerlist via gossip, and broadcasts only locally-originated transactions through those peers. Clearnet block sync, gossip, and forwarded transactions continue over clearnet. For maximum privacy also enable Pad transactions. Maps to monerod --tx-proxy tor,<tor-ip>:9050.': 59,
   'Accept inbound connections over Tor': 60,
-  'Advertise this node as a Tor hidden service and accept inbound peer connections over it. Maps to monerod --anonymous-inbound onion,...': 61,
+  'Advertise this node as a Tor hidden service and accept inbound peer connections over it. Requires a .onion address on the Peer interface — add one via Interfaces → Peer → Add Tor address. Implicitly enables Send local transactions through Tor proxy, since monerod requires both for the Tor zone. Maps to monerod --anonymous-inbound <onion>:18080,...': 61,
   'Max Tor Outbound Connections': 62,
   "Maximum number of simultaneous outbound connections monerod opens to Tor's SOCKS proxy.": 63,
   Default: 64,

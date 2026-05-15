@@ -56,17 +56,23 @@ export const main = sdk.setupMain(async ({ effects }) => {
     })
   }
 
+  // monerod requires --tx-proxy for the tor zone whenever --anonymous-inbound
+  // is configured for tor (otherwise the daemon errors at startup), so any
+  // active inbound implies tx-proxy must be set too.
+  const inboundReady = !!(torIp && store.torInbound && peerOnionHost)
+  const txProxyActive = !!(torIp && (store.torOutbound || inboundReady))
+
   const anonymityArgs: string[] = []
   if (torIp && store.outboundProxy === 'tor') {
     anonymityArgs.push('--proxy', `${torIp}:${torSocksPort}`)
   }
-  if (torIp && store.torOutbound) {
+  if (txProxyActive) {
     const txProxy =
       `tor,${torIp}:${torSocksPort},${store.torMaxOutboundConns ?? 16}` +
       (store.torDandelionNoise === false ? ',disable_noise' : '')
     anonymityArgs.push('--tx-proxy', txProxy)
   }
-  if (torIp && store.torInbound && peerOnionHost) {
+  if (inboundReady) {
     anonymityArgs.push(
       '--anonymous-inbound',
       `${peerOnionHost}:${p2pPort},127.0.0.1:${p2pLocalBindPort},${store.torMaxInboundConns ?? 16}`,
@@ -75,8 +81,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (store.padTransactions) {
     anonymityArgs.push('--pad-transactions')
   }
-
-  const inboundReady = torIp && store.torInbound && !!peerOnionHost
 
   /**
    * ======================== Subcontainers ========================
@@ -139,13 +143,30 @@ export const main = sdk.setupMain(async ({ effects }) => {
    * ======================== Daemons ========================
    */
   return sdk.Daemons.of(effects)
+    .addOneshot('seed-ban-list', {
+      // The simple-monerod image bundles a community-maintained ban list at
+      // /home/monero/ban_list.txt. Seed it into the volume on first start (or
+      // when the volume's file is empty) so monerod actually picks it up;
+      // user edits via the Edit Ban List action are preserved on subsequent
+      // starts because the file is then non-empty.
+      subcontainer: monerodSub,
+      exec: {
+        command: [
+          'sh',
+          '-c',
+          'if [ ! -s /home/monero/.bitmonero/ban_list.txt ]; then if [ -f /home/monero/ban_list.txt ]; then cp /home/monero/ban_list.txt /home/monero/.bitmonero/ban_list.txt; else touch /home/monero/.bitmonero/ban_list.txt; fi; fi',
+        ],
+        user: 'root',
+      },
+      requires: [],
+    })
     .addOneshot('chown-monerod', {
       subcontainer: monerodSub,
       exec: {
         command: ['chown', '-R', 'monero:monero', '/home/monero/.bitmonero'],
         user: 'root',
       },
-      requires: [],
+      requires: ['seed-ban-list'],
     })
     .addOneshot('chown-wallet', {
       subcontainer: walletRpcSub,
@@ -276,6 +297,14 @@ export const main = sdk.setupMain(async ({ effects }) => {
             return {
               result: 'disabled',
               message: i18n('Tor is not running'),
+            }
+          }
+          if (store.torInbound && !peerOnionHost) {
+            return {
+              result: 'failure',
+              message: i18n(
+                'Inbound enabled but no .onion address on the Peer interface — add a Tor address to the Peer interface, then restart.',
+              ),
             }
           }
           return {

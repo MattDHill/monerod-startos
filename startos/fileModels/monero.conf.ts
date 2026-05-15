@@ -241,8 +241,8 @@ export const fullConfigSpec = InputSpec.of({
       },
       {
         spec: peerSpec,
-        displayAs: null,
-        uniqueBy: null,
+        displayAs: '{{hostname}}:{{port}}',
+        uniqueBy: 'hostname',
       },
     ),
   ),
