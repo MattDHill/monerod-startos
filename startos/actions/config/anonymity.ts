@@ -1,6 +1,14 @@
+import type { Store } from '../../fileModels/store.json'
 import { storeJson } from '../../fileModels/store.json'
 import { i18n } from '../../i18n'
 import { sdk } from '../../sdk'
+
+// monerod requires --tx-proxy whenever --anonymous-inbound is set on the Tor
+// zone, so torInbound implicitly forces torOutbound. Surface that coupling
+// both ways: any Tor-inbound state read or written has torOutbound forced on.
+function normalizeTor<T extends Partial<Store>>(s: T): T {
+  return s.torInbound ? { ...s, torOutbound: true } : s
+}
 
 const { InputSpec, Value } = sdk
 
@@ -87,7 +95,10 @@ export const anonymityConfig = sdk.Action.withInput(
 
   anonymitySpec,
 
-  () => storeJson.read().once(),
+  async () => {
+    const s = await storeJson.read().once()
+    return s ? normalizeTor(s) : null
+  },
 
-  ({ effects, input }) => storeJson.merge(effects, input),
+  ({ effects, input }) => storeJson.merge(effects, normalizeTor(input)),
 )

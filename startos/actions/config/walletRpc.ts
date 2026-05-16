@@ -32,7 +32,6 @@ export const walletRpcConfig = sdk.Action.withInput(
 
     await walletRpcConfFile.merge(effects, {
       'rpc-login': walletRpcLogin,
-      'disable-rpc-login': walletRpcLogin ? undefined : 1,
     })
   },
 )

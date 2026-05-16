@@ -1,5 +1,7 @@
+import { createHash, randomBytes } from 'node:crypto'
 import { rm } from 'fs/promises'
 import { moneroConfFile } from './fileModels/monero.conf'
+import { walletRpcConfFile } from './fileModels/monero-wallet-rpc.conf'
 import { storeJson } from './fileModels/store.json'
 import { i18n } from './i18n'
 import { sdk } from './sdk'
@@ -11,14 +13,103 @@ import {
   walletRpcPort,
 } from './utils'
 
+type RpcCreds = { username: string; password: string }
+
+/**
+ * monerod's RPC servers use HTTP Digest authentication when --rpc-login is
+ * set. Both the unrestricted and restricted RPC ports share the same auth
+ * config, so the in-container sync-progress health check needs to speak
+ * Digest too. This is a minimal RFC 7616 client: one initial request, parse
+ * the 401 challenge, then a second request with the computed response.
+ */
+async function digestFetch(
+  url: string,
+  method: string,
+  body: string,
+  contentType: string,
+  creds: RpcCreds | null,
+): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': contentType }
+  const res = await fetch(url, { method, headers, body })
+  if (res.status !== 401 || !creds) return res
+
+  const challenge = parseDigestChallenge(res.headers.get('www-authenticate'))
+  if (!challenge?.realm || !challenge.nonce) return res
+
+  const uri = new URL(url).pathname || '/'
+  const qop = challenge.qop?.split(',')[0]?.trim() || 'auth'
+  const nc = '00000001'
+  const cnonce = randomBytes(8).toString('hex')
+  const md5 = (s: string) => createHash('md5').update(s).digest('hex')
+  const ha1 = md5(`${creds.username}:${challenge.realm}:${creds.password}`)
+  const ha2 = md5(`${method}:${uri}`)
+  const response = md5(
+    `${ha1}:${challenge.nonce}:${nc}:${cnonce}:${qop}:${ha2}`,
+  )
+
+  const parts = [
+    `username="${creds.username}"`,
+    `realm="${challenge.realm}"`,
+    `nonce="${challenge.nonce}"`,
+    `uri="${uri}"`,
+    `qop=${qop}`,
+    `nc=${nc}`,
+    `cnonce="${cnonce}"`,
+    `response="${response}"`,
+  ]
+  if (challenge.opaque) parts.push(`opaque="${challenge.opaque}"`)
+  if (challenge.algorithm) parts.push(`algorithm=${challenge.algorithm}`)
+
+  return fetch(url, {
+    method,
+    headers: { ...headers, Authorization: `Digest ${parts.join(', ')}` },
+    body,
+  })
+}
+
+function parseDigestChallenge(
+  header: string | null,
+): Record<string, string> | null {
+  if (!header) return null
+  const m = header.match(/^\s*Digest\s+(.+)$/i)
+  if (!m) return null
+  const out: Record<string, string> = {}
+  // key=value, with values either quoted or token form
+  for (const [, k, q, t] of m[1].matchAll(
+    /(\w+)\s*=\s*(?:"([^"]*)"|([^,\s]+))/g,
+  )) {
+    out[k] = q ?? t
+  }
+  return out
+}
+
 export const main = sdk.setupMain(async ({ effects }) => {
   /**
    * ======================== Setup ========================
    */
   console.info(i18n('Starting Monero!'))
 
-  // Watch monero.conf so daemon restarts when the file changes
-  await moneroConfFile.read().const(effects)
+  // Watch monero.conf / wallet conf so the daemons restart when either
+  // changes. The form-shape values pulled out here drive auth and CLI args
+  // below; restarts are automatic because const() tracks them as deps.
+  const monConf = await moneroConfFile.read().const(effects)
+  const walletConf = await walletRpcConfFile.read().const(effects)
+
+  // Daemon RPC credentials — used to talk to monerod from the in-container
+  // sync-progress health check via HTTP Digest. Null when creds are off.
+  const rpcCreds: RpcCreds | null = (() => {
+    const c = monConf?.['rpc-credentials']
+    if (c?.selection !== 'enabled') return null
+    const username = c.value?.username
+    const password = c.value?.password
+    if (!username || !password) return null
+    return { username, password }
+  })()
+
+  // wallet-rpc daemon refuses to start without either --rpc-login or
+  // --disable-rpc-login. The user's choice lives in monero-wallet-rpc.conf's
+  // rpc-login key; presence/absence here decides which CLI flag to add.
+  const walletDisableRpcLogin = !walletConf?.['rpc-login']
 
   // Anonymity intents live in store.json and drive the Tor CLI args below.
   // init seeds store.json, so the read is guaranteed non-null here.
@@ -206,6 +297,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
           '--non-interactive',
           '--config-file',
           '/home/monero/wallet/monero-wallet-rpc.conf',
+          ...(walletDisableRpcLogin ? ['--disable-rpc-login'] : []),
         ],
       },
       ready: {
@@ -223,17 +315,16 @@ export const main = sdk.setupMain(async ({ effects }) => {
         display: i18n('Blockchain Sync Progress'),
         fn: async () => {
           try {
-            const res = await fetch(
+            const res = await digestFetch(
               `http://127.0.0.1:${rpcRestrictedPort}/json_rpc`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  jsonrpc: '2.0',
-                  id: '0',
-                  method: 'get_info',
-                }),
-              },
+              'POST',
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: '0',
+                method: 'get_info',
+              }),
+              'application/json',
+              rpcCreds,
             )
 
             if (!res.ok) {

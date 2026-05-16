@@ -106,9 +106,9 @@ All numeric and toggle inputs in the actions are optional. The file model writes
 
 The few settings where the package takes an opinion. The default is pre-filled in the form and seeded into the file on first install.
 
-| Setting           | Package default | Upstream default      | Rationale                                                                                                                                                    |
-| ----------------- | --------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Wallet-RPC login  | disabled        | n/a (one is required) | `monero-wallet-rpc` refuses to start without either `--rpc-login` or `--disable-rpc-login`; seeding the disabled flag removes the need for a first-run wizard |
+| Setting           | Package default | Upstream default      | Rationale                                                                                                                                                                                                  |
+| ----------------- | --------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wallet-RPC login  | disabled        | n/a (one is required) | `monero-wallet-rpc` refuses to start without either `--rpc-login` or `--disable-rpc-login`. The Wallet RPC Settings action toggles `rpc-login`; `main.ts` adds `--disable-rpc-login` when it isn't set     |
 
 No Tor intents are enabled by default — Monero ships in clearnet mode. Enable Tor outbound / inbound / outbound-proxy in the Anonymity Networks action.
 
@@ -117,7 +117,7 @@ No Tor intents are enabled by default — Monero ships in clearnet mode. Enable 
 On fresh install, StartOS writes the config files before the daemons start:
 
 - **`monero.conf`** — enforced keys only. Every user-facing setting is absent, meaning monerod applies its own default.
-- **`monero-wallet-rpc.conf`** — enforced keys plus `disable-rpc-login=1`.
+- **`monero-wallet-rpc.conf`** — enforced keys only. `disable-rpc-login` is not stored here; it's added as a CLI flag at daemon launch when no `rpc-login` is set (see below).
 - **`ban_list.txt`** — seeded from the upstream simple-monerod image's bundled list at `/home/monero/ban_list.txt` on first start. The seed runs again whenever the volume's file is empty (so a wiped volume re-seeds), but is skipped once the file is non-empty so user edits via the Edit Ban List action are preserved.
 - **`store.json`** — default intents (`outboundProxy=none`, everything else off / null).
 
@@ -234,7 +234,7 @@ Only regeneratable state is excluded from the `monerod` volume: the blockchain d
 | ---------------------------- | ------------------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
 | **Monero Daemon**            | Port listening on 18089               | 30 seconds   | Restricted RPC reachability                                                                |
 | **Wallet RPC**               | Port listening on 28088               | Default      | monero-wallet-rpc reachability                                                             |
-| **Blockchain Sync Progress** | JSON-RPC `get_info` on restricted RPC | Default      | Starting → loading (`Syncing blocks...XX.XX%`) → success (`Monero is fully synced`)         |
+| **Blockchain Sync Progress** | JSON-RPC `get_info` on restricted RPC | Default      | Uses HTTP Digest auth when Daemon RPC credentials are enabled. Starting → loading (`Syncing blocks...XX.XX%`) → success (`Monero is fully synced`) |
 | **Tor**                      | Reads store + Tor package status      | n/a          | Disabled when no Tor intent is set, Tor isn't installed, or Tor isn't running. Failure when inbound is enabled but the Peer interface has no `.onion` address. Otherwise success — reports inbound/outbound state. |
 | **Clearnet**                 | Reads `outboundProxy` intent          | n/a          | Disabled when **Route all outbound traffic via** is set to Tor; otherwise success           |
 

@@ -7,14 +7,6 @@ const iniString = z
   .union([z.array(z.string()).transform((a) => a.at(-1)!), z.string()])
   .optional()
   .catch(undefined)
-const iniNumber = z
-  .union([
-    z.array(z.string()).transform((a) => Number(a.at(-1))),
-    z.string().transform(Number),
-    z.number(),
-  ])
-  .optional()
-  .catch(undefined)
 
 const shape = z.object({
   // Enforced
@@ -31,8 +23,13 @@ const shape = z.object({
   'rpc-bind-port': z.literal(walletRpcPort).catch(walletRpcPort),
   // Conditional
   'rpc-login': iniString,
-  'disable-rpc-login': iniNumber,
   'daemon-login': iniString,
+  // Enforced undefined. disable-rpc-login is mutually exclusive with
+  // rpc-login; main.ts adds it as a CLI flag when rpc-login is unset so the
+  // conf file is never the source of truth. Forcing undefined here strips
+  // any legacy value on the next read/write — the SDK's z.object is loose
+  // by default, so we have to explicitly null this out instead of omitting.
+  'disable-rpc-login': z.undefined().catch(undefined),
 })
 
 function onWrite(a: unknown): any {
