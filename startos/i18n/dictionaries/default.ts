@@ -24,6 +24,7 @@ const dict = {
   'Excluded by outbound proxy': 19,
   'Outbound only. Publish an IP address to enable inbound.': 128,
   'Inbound enabled but no .onion address on the Peer interface — add a Tor address to the Peer interface, then restart.': 129,
+  'Domain name, onion or IP address of Monero peer. Bracket IPv6 literals (e.g. [::1]). Do not include the port — set it in the Port field.': 130,
 
   // interfaces.ts
   'Peer Interface': 20,

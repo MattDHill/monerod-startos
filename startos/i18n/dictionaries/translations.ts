@@ -132,6 +132,7 @@ export default {
     127: 'Estos campos fueron proporcionados por una tarea y no pueden editarse',
     128: 'Solo salientes. Publique una dirección IP para habilitar las entrantes.',
     129: 'Entrantes habilitadas pero no hay dirección .onion en la interfaz de Pares — añada una dirección Tor a la interfaz de Pares y reinicie.',
+    130: 'Nombre de dominio, onion o dirección IP del par de Monero. Encierre los literales IPv6 entre corchetes (p. ej. [::1]). No incluya el puerto — indíquelo en el campo Puerto.',
   } satisfies LangDict,
   de_DE: {
     0: 'Monero wird gestartet!',
@@ -264,6 +265,7 @@ export default {
     127: 'Diese Felder wurden von einer Aufgabe bereitgestellt und können nicht bearbeitet werden',
     128: 'Nur ausgehend. Veröffentlichen Sie eine IP-Adresse, um eingehende Verbindungen zu aktivieren.',
     129: 'Eingehend aktiviert, aber keine .onion-Adresse auf der Peer-Schnittstelle — fügen Sie eine Tor-Adresse zur Peer-Schnittstelle hinzu und starten Sie neu.',
+    130: 'Domainname, Onion oder IP-Adresse des Monero-Peers. IPv6-Literale in eckige Klammern setzen (z. B. [::1]). Den Port nicht einschließen — im Port-Feld angeben.',
   } satisfies LangDict,
   pl_PL: {
     0: 'Uruchamianie Monero!',
@@ -396,6 +398,7 @@ export default {
     127: 'Te pola zostały dostarczone przez zadanie i nie mogą być edytowane',
     128: 'Tylko wychodzące. Opublikuj adres IP, aby włączyć połączenia przychodzące.',
     129: 'Połączenia przychodzące włączone, ale brak adresu .onion na interfejsie Peerów — dodaj adres Tor do interfejsu Peerów i uruchom ponownie.',
+    130: 'Nazwa domeny, onion lub adres IP peera Monero. Adresy IPv6 ujmij w nawiasy kwadratowe (np. [::1]). Nie umieszczaj portu — wprowadź go w polu Port.',
   } satisfies LangDict,
   fr_FR: {
     0: 'Démarrage de Monero !',
@@ -528,5 +531,6 @@ export default {
     127: 'Ces champs ont été fournis par une tâche et ne peuvent pas être modifiés',
     128: 'Sortantes uniquement. Publiez une adresse IP pour activer les connexions entrantes.',
     129: 'Entrantes activées mais aucune adresse .onion sur l\'interface Pair — ajoutez une adresse Tor à l\'interface Pair, puis redémarrez.',
+    130: 'Nom de domaine, onion ou adresse IP du pair Monero. Mettez les littéraux IPv6 entre crochets (p. ex. [::1]). Ne pas inclure le port — indiquez-le dans le champ Port.',
   } satisfies LangDict,
 } satisfies Record<string, LangDict>

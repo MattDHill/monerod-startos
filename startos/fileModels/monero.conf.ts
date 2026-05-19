@@ -108,12 +108,17 @@ const alphanumUnderscore = [
 const peerSpec = InputSpec.of({
   hostname: Value.text({
     name: i18n('Hostname'),
-    description: i18n('Domain name, onion or IP address of Monero peer.'),
+    description: i18n(
+      'Domain name, onion or IP address of Monero peer. Bracket IPv6 literals (e.g. [::1]). Do not include the port — set it in the Port field.',
+    ),
     required: true,
     default: null,
     patterns: [
       {
-        regex: '^[a-zA-Z0-9.:_\\[\\]-]+$',
+        // Unbracketed: letters/digits/dot/dash/underscore (DNS, onion, IPv4).
+        // Bracketed: IPv6 literal. Colons are not permitted outside brackets,
+        // so users can't sneak host:port into the hostname field.
+        regex: '^([a-zA-Z0-9._-]+|\\[[0-9a-fA-F:]+\\])$',
         description: i18n('Hostname'),
       },
     ],
@@ -123,8 +128,8 @@ const peerSpec = InputSpec.of({
     description: i18n(
       'TCP Port that peer is listening on for inbound p2p connections.',
     ),
-    required: false,
-    default: p2pPort,
+    required: true,
+    default: null,
     integer: true,
     min: 0,
     max: 65535,
@@ -332,10 +337,13 @@ function toArray(val: string | string[] | undefined): string[] {
   return Array.isArray(val) ? val : [val]
 }
 
-function parsePeerString(s: string): { hostname: string; port: number } | null {
+function parsePeerString(
+  s: string,
+): { hostname: string; port: number | null } | null {
   const [hostname, portStr] = s.split(':')
   if (!hostname) return null
-  return { hostname, port: Number(portStr) || p2pPort }
+  const port = portStr ? Number(portStr) : NaN
+  return { hostname, port: Number.isFinite(port) ? port : null }
 }
 
 function parseRpcLogin(login: string | undefined) {
@@ -361,25 +369,28 @@ function fileToForm(
   const hasRegularPeer =
     conf['add-peer'] !== undefined || conf['add-priority-node'] !== undefined
 
+  // The form spec marks port as required, so it's number | undefined here.
+  // parsePeerString returns null for entries on disk that lack a parsable
+  // port; convert to undefined so the form surfaces the empty required field.
   const peer: Array<{
     hostname: string
-    port: number | null
+    port: number | undefined
     priority: boolean
   }> = []
+  const push = (s: string, priority: boolean) => {
+    const parsed = parsePeerString(s)
+    if (parsed)
+      peer.push({
+        hostname: parsed.hostname,
+        port: parsed.port ?? undefined,
+        priority,
+      })
+  }
   if (strictNodes) {
-    for (const node of toArray(conf['add-exclusive-node'])) {
-      const parsed = parsePeerString(node)
-      if (parsed) peer.push({ ...parsed, priority: false })
-    }
+    for (const node of toArray(conf['add-exclusive-node'])) push(node, false)
   } else {
-    for (const node of toArray(conf['add-peer'])) {
-      const parsed = parsePeerString(node)
-      if (parsed) peer.push({ ...parsed, priority: false })
-    }
-    for (const node of toArray(conf['add-priority-node'])) {
-      const parsed = parsePeerString(node)
-      if (parsed) peer.push({ ...parsed, priority: true })
-    }
+    for (const node of toArray(conf['add-peer'])) push(node, false)
+    for (const node of toArray(conf['add-priority-node'])) push(node, true)
   }
 
   return {
